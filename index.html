@@ -2,23 +2,55 @@
 <html lang="ja">
 <head>
     <meta charset="UTF-8">
-    <title>釧路・米町 夕日ナビ（航空写真版）</title>
+    <title>K - Sunset Navigator</title>
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
     <style>
-        body { margin: 0; font-family: sans-serif; display: flex; flex-direction: column; height: 100vh; background: #1a1a1a; }
-        #controls { padding: 15px; background: rgba(44, 62, 80, 0.9); color: white; z-index: 1000; box-shadow: 0 2px 5px rgba(0,0,0,0.5); }
-        #map { flex-grow: 1; width: 100%; }
-        input[type="date"] { padding: 8px; border-radius: 4px; border: none; font-size: 16px; margin-top: 5px; width: 100%; max-width: 200px; }
-        .info-panel { margin-top: 10px; font-weight: bold; color: #ffca28; text-shadow: 1px 1px 2px black; }
+        :root {
+            --accent: #ff7e5f;
+            --gold: #feb47b;
+            --glass: rgba(26, 26, 26, 0.85);
+        }
+        body { margin: 0; font-family: 'Helvetica Neue', Arial, sans-serif; height: 100vh; background: #000; color: #fff; }
+        
+        /* 操作パネル：すりガラス風 */
+        #controls { 
+            position: absolute; top: 20px; left: 20px; width: 280px;
+            padding: 25px; background: var(--glass); 
+            backdrop-filter: blur(10px); border: 1px solid rgba(255,255,255,0.1);
+            border-radius: 20px; z-index: 1000; box-shadow: 0 8px 32px rgba(0,0,0,0.5);
+        }
+
+        h1 { margin: 0 0 15px; font-size: 18px; letter-spacing: 2px; color: var(--gold); border-bottom: 1px solid var(--gold); padding-bottom: 10px; }
+        label { font-size: 12px; text-transform: uppercase; letter-spacing: 1px; opacity: 0.8; }
+        
+        input[type="date"] { 
+            width: 100%; background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.2);
+            color: #fff; padding: 10px; border-radius: 8px; margin: 8px 0 20px; font-size: 16px; outline: none;
+        }
+
+        .info-panel { line-height: 1.6; }
+        .time-label { font-size: 32px; font-weight: 200; display: block; margin-bottom: 5px; color: #fff; }
+        .deg-label { font-size: 14px; color: var(--gold); }
+
+        #map { height: 100vh; width: 100%; filter: brightness(0.8) contrast(1.2); }
+
+        /* Leafletのコピーライト表示を少し控えめに */
+        .leaflet-control-attribution { background: none !important; color: rgba(255,255,255,0.3) !important; font-size: 9px; }
     </style>
 </head>
 <body>
 
 <div id="controls">
-    <strong>日付を選択して夕日の方向を確認:</strong><br>
+    <h1>SUNSET NAVI</h1>
+    <label>Select Date</label>
     <input type="date" id="date-picker">
-    <div class="info-panel" id="sunset-info">読み込み中...</div>
+    
+    <div class="info-panel">
+        <label>Sunset Time</label>
+        <span class="time-label" id="sunset-time">--:--</span>
+        <span class="deg-label" id="sunset-deg">---°</span>
+    </div>
 </div>
 
 <div id="map"></div>
@@ -27,56 +59,53 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/suncalc/1.9.0/suncalc.min.js"></script>
 
 <script>
-    // 1. 基本設定（炉ばたとワイン K の座標）
     const shopLat = 42.968995;
     const shopLng = 144.373180;
     let sunsetLine = null;
 
-    // 地図の初期化
-    const map = L.map('map').setView([shopLat, shopLng], 17); // 航空写真なので少しズームアップ
+    // 地図の初期化（衛星写真）
+    const map = L.map('map', { zoomControl: false }).setView([shopLat, shopLng], 17);
+    L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}').addTo(map);
 
-    // ★ここを「航空写真タイル」に変更しました
-    L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
-        attribution: 'Tiles &copy; Esri &mdash; Source: Esri, i-cubed, USDA, USGS, AEX, GeoEye, Getmapping, Aerogrid, IGN, IGP, UPR-EBP, and the GIS User Community'
-    }).addTo(map);
+    // お店の位置にカスタムアイコン
+    const kIcon = L.divIcon({
+        className: 'custom-div-icon',
+        html: "<div style='background-color:#ff7e5f; width:12px; height:12px; border-radius:50%; border:2px solid white; box-shadow: 0 0 15px #ff7e5f;'></div>",
+        iconSize: [12, 12],
+        iconAnchor: [6, 6]
+    });
+    L.marker([shopLat, shopLng], {icon: kIcon}).addTo(map);
 
-    // お店の位置にマーカー
-    const marker = L.marker([shopLat, shopLng]).addTo(map).bindPopup("炉ばたとワイン K");
-
-    // 2. カレンダー設定
     const dateInput = document.getElementById('date-picker');
     dateInput.value = new Date().toISOString().split('T')[0];
 
-    // 3. 更新関数
-    function updateSunsetDirection() {
-        const selectedDate = new Date(dateInput.value);
-        const times = SunCalc.getTimes(selectedDate, shopLat, shopLng);
-        const sunsetPos = SunCalc.getPosition(times.sunset, shopLat, shopLng);
+    function update() {
+        const date = new Date(dateInput.value);
+        const times = SunCalc.getTimes(date, shopLat, shopLng);
+        const pos = SunCalc.getPosition(times.sunset, shopLat, shopLng);
         
-        const azimuth = sunsetPos.azimuth; 
-        
-        if (sunsetLine) { map.removeLayer(sunsetLine); }
+        if (sunsetLine) map.removeLayer(sunsetLine);
 
-        // 線の長さ（航空写真で見やすいように調整）
-        const d = 0.01; 
-        const endLat = shopLat + d * Math.cos(azimuth + Math.PI);
-        const endLng = shopLng + d * Math.sin(azimuth + Math.PI);
+        // 線の描画（光が拡散するようなグラデーション効果を模したデザイン）
+        const d = 0.015;
+        const endLat = shopLat + d * Math.cos(pos.azimuth + Math.PI);
+        const endLng = shopLng + d * Math.sin(pos.azimuth + Math.PI);
 
-        // 夕日の光線を「太いオレンジの光」のように表現
         sunsetLine = L.polyline([[shopLat, shopLng], [endLat, endLng]], {
-            color: '#ff4500',
-            weight: 10,
-            opacity: 0.5,
-            lineCap: 'round'
+            color: '#feb47b',
+            weight: 4,
+            opacity: 0.8,
+            lineCap: 'round',
+            dashArray: '1, 10' // 繊細な光の線
         }).addTo(map);
 
-        const timeStr = times.sunset.toLocaleTimeString('ja-JP', {hour: '2-digit', minute:'2-digit'});
-        document.getElementById('sunset-info').innerHTML = 
-            `🌅 日没: ${timeStr}頃 <br> 方角: ${(azimuth * 180 / Math.PI + 180).toFixed(1)}° (真北0°)`;
+        // 数値の更新
+        document.getElementById('sunset-time').innerText = times.sunset.toLocaleTimeString('ja-JP', {hour: '2-digit', minute:'2-digit'});
+        document.getElementById('sunset-deg').innerText = `方位角: ${(pos.azimuth * 180 / Math.PI + 180).toFixed(1)}°`;
     }
 
-    dateInput.addEventListener('change', updateSunsetDirection);
-    updateSunsetDirection();
+    dateInput.addEventListener('change', update);
+    update();
 </script>
 </body>
 </html>
