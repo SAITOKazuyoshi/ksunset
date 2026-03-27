@@ -2,21 +2,21 @@
 <html lang="ja">
 <head>
     <meta charset="UTF-8">
-    <title>釧路・米町 夕日ナビ</title>
+    <title>釧路・米町 夕日ナビ（航空写真版）</title>
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
     <style>
-        body { margin: 0; font-family: sans-serif; display: flex; flex-direction: column; height: 100vh; }
-        #controls { padding: 15px; background: #2c3e50; color: white; z-index: 1000; box-shadow: 0 2px 5px rgba(0,0,0,0.3); }
+        body { margin: 0; font-family: sans-serif; display: flex; flex-direction: column; height: 100vh; background: #1a1a1a; }
+        #controls { padding: 15px; background: rgba(44, 62, 80, 0.9); color: white; z-index: 1000; box-shadow: 0 2px 5px rgba(0,0,0,0.5); }
         #map { flex-grow: 1; width: 100%; }
-        input[type="date"] { padding: 8px; border-radius: 4px; border: none; font-size: 16px; margin-top: 5px; }
-        .info-panel { margin-top: 10px; font-weight: bold; color: #ffca28; }
+        input[type="date"] { padding: 8px; border-radius: 4px; border: none; font-size: 16px; margin-top: 5px; width: 100%; max-width: 200px; }
+        .info-panel { margin-top: 10px; font-weight: bold; color: #ffca28; text-shadow: 1px 1px 2px black; }
     </style>
 </head>
 <body>
 
 <div id="controls">
-    <strong>日付を選択:</strong><br>
+    <strong>日付を選択して夕日の方向を確認:</strong><br>
     <input type="date" id="date-picker">
     <div class="info-panel" id="sunset-info">読み込み中...</div>
 </div>
@@ -33,60 +33,50 @@
     let sunsetLine = null;
 
     // 地図の初期化
-    const map = L.map('map').setView([shopLat, shopLng], 15);
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-        attribution: '&copy; OpenStreetMap contributors'
+    const map = L.map('map').setView([shopLat, shopLng], 17); // 航空写真なので少しズームアップ
+
+    // ★ここを「航空写真タイル」に変更しました
+    L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
+        attribution: 'Tiles &copy; Esri &mdash; Source: Esri, i-cubed, USDA, USGS, AEX, GeoEye, Getmapping, Aerogrid, IGN, IGP, UPR-EBP, and the GIS User Community'
     }).addTo(map);
 
-    // お店のマーカー
-    L.marker([shopLat, shopLng]).addTo(map).bindPopup("炉ばたとワイン K").openPopup();
+    // お店の位置にマーカー
+    const marker = L.marker([shopLat, shopLng]).addTo(map).bindPopup("炉ばたとワイン K");
 
-    // 2. カレンダーの初期値を今日に設定
+    // 2. カレンダー設定
     const dateInput = document.getElementById('date-picker');
-    const today = new Date().toISOString().split('T')[0];
-    dateInput.value = today;
+    dateInput.value = new Date().toISOString().split('T')[0];
 
-    // 3. 更新関数：日付が変わるたびに呼び出す
+    // 3. 更新関数
     function updateSunsetDirection() {
         const selectedDate = new Date(dateInput.value);
-        
-        // SunCalcで計算
         const times = SunCalc.getTimes(selectedDate, shopLat, shopLng);
         const sunsetPos = SunCalc.getPosition(times.sunset, shopLat, shopLng);
         
-        // 方位角（ラジアン）を計算
         const azimuth = sunsetPos.azimuth; 
         
-        // 前の線を消す
-        if (sunsetLine) {
-            map.removeLayer(sunsetLine);
-        }
+        if (sunsetLine) { map.removeLayer(sunsetLine); }
 
-        // 線の終点を計算（地図上で見やすいように約5kmの長さに設定）
-        const d = 0.05; 
+        // 線の長さ（航空写真で見やすいように調整）
+        const d = 0.01; 
         const endLat = shopLat + d * Math.cos(azimuth + Math.PI);
         const endLng = shopLng + d * Math.sin(azimuth + Math.PI);
 
-        // 新しい線を引く
+        // 夕日の光線を「太いオレンジの光」のように表現
         sunsetLine = L.polyline([[shopLat, shopLng], [endLat, endLng]], {
-            color: '#e67e22',
-            weight: 6,
-            opacity: 0.7,
-            dashArray: '5, 10'
+            color: '#ff4500',
+            weight: 10,
+            opacity: 0.5,
+            lineCap: 'round'
         }).addTo(map);
 
-        // テキスト表示の更新
         const timeStr = times.sunset.toLocaleTimeString('ja-JP', {hour: '2-digit', minute:'2-digit'});
         document.getElementById('sunset-info').innerHTML = 
-            `🌅 日没時刻: ${timeStr} <br> 角度: ${(azimuth * 180 / Math.PI + 180).toFixed(1)}度`;
+            `🌅 日没: ${timeStr}頃 <br> 方角: ${(azimuth * 180 / Math.PI + 180).toFixed(1)}° (真北0°)`;
     }
 
-    // イベントリスナー：日付を変えたら実行
     dateInput.addEventListener('change', updateSunsetDirection);
-
-    // 初回実行
     updateSunsetDirection();
-
 </script>
 </body>
 </html>
