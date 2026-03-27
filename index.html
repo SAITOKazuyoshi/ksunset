@@ -4,174 +4,108 @@
     <meta charset="UTF-8">
     <title>K - 釧路・米町 夕日ナビ</title>
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <style>
-        :root {
-            --accent: #ff7e5f;
-            --gold: #feb47b;
-            --glass: rgba(26, 26, 26, 0.85);
-        }
+        :root { --accent: #ff7e5f; --gold: #feb47b; --glass: rgba(26, 26, 26, 0.9); }
+        body, html { margin: 0; padding: 0; width: 100%; height: 100%; background: #1a1a1a; color: #fff; overflow: hidden; }
         
-        body, html { 
-            margin: 0; padding: 0; width: 100%; height: 100%; 
-            font-family: 'Helvetica Neue', Arial, sans-serif; 
-            background: #000; overflow: hidden; 
+        /* 読み込み中の表示 */
+        #loader {
+            position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+            z-index: 2000; font-size: 14px; letter-spacing: 2px; color: var(--gold);
         }
 
-        /* 操作パネル：スマホ向けに上部に配置 */
         #controls { 
-            position: absolute; 
-            top: 15px; left: 15px; right: 15px; 
-            padding: 15px 20px; 
-            background: var(--glass); 
-            backdrop-filter: blur(12px); 
-            -webkit-backdrop-filter: blur(12px);
-            border: 1px solid rgba(255,255,255,0.15);
-            border-radius: 15px; 
-            z-index: 1000; 
-            box-shadow: 0 4px 20px rgba(0,0,0,0.6);
-            display: flex;
-            flex-direction: column;
-            gap: 10px;
+            position: absolute; top: 15px; left: 15px; right: 15px; 
+            padding: 20px; background: var(--glass); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
+            border: 1px solid rgba(255,255,255,0.1); border-radius: 15px; z-index: 1000;
         }
 
-        h1 { margin: 0; font-size: 16px; letter-spacing: 2px; color: var(--gold); border-bottom: 1px solid rgba(254, 180, 123, 0.3); padding-bottom: 5px; }
-        
-        .input-group { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
-        
-        label { font-size: 10px; text-transform: uppercase; letter-spacing: 1px; opacity: 0.7; color: #fff; }
-        
-        /* スマホで押しやすい大きな入力欄 */
+        h1 { margin: 0 0 10px; font-size: 16px; letter-spacing: 2px; color: var(--gold); }
         input[type="date"] { 
-            flex-grow: 1;
-            background: rgba(255,255,255,0.1); 
-            border: 1px solid rgba(255,255,255,0.2);
-            color: #fff; padding: 8px; border-radius: 8px; 
-            font-size: 16px; outline: none;
-            -webkit-appearance: none;
+            width: 100%; background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.3);
+            color: #fff; padding: 10px; border-radius: 8px; font-size: 16px; margin-bottom: 10px;
         }
 
-        .info-grid { display: flex; justify-content: space-between; align-items: flex-end; }
-        .time-display { display: flex; flex-direction: column; }
-        .time-label { font-size: 36px; font-weight: 200; line-height: 1; color: #fff; }
-        .deg-label { font-size: 12px; color: var(--gold); }
+        .time-label { font-size: 42px; font-weight: 200; line-height: 1; }
+        #map { height: 100%; width: 100%; background: #1a1a1a; } /* 地図エリアを確保 */
 
-        /* 地図のスタイル */
-        #map { height: 100%; width: 100%; filter: brightness(0.9) contrast(1.1); }
-        
-        /* LeafletのUI調整 */
-        .leaflet-bar { border: none !important; box-shadow: 0 2px 10px rgba(0,0,0,0.5) !important; }
-        .leaflet-control-attribution { font-size: 8px !important; background: none !important; color: rgba(255,255,255,0.4) !important; }
-
-        /* お店のピンのアニメーション */
         .k-marker {
-            background-color: var(--accent); 
-            width: 14px; height: 14px; 
-            border-radius: 50%; 
-            border: 2px solid white; 
-            box-shadow: 0 0 15px var(--accent);
-            animation: pulse 2s infinite;
-        }
-        @keyframes pulse {
-            0% { transform: scale(1); box-shadow: 0 0 0 0 rgba(255, 126, 95, 0.7); }
-            70% { transform: scale(1.2); box-shadow: 0 0 0 15px rgba(255, 126, 95, 0); }
-            100% { transform: scale(1); box-shadow: 0 0 0 0 rgba(255, 126, 95, 0); }
+            background: var(--accent); width: 12px; height: 12px; border-radius: 50%;
+            border: 2px solid #fff; box-shadow: 0 0 15px var(--accent);
         }
     </style>
 </head>
 <body>
 
+<div id="loader">MAP LOADING...</div>
+
 <div id="controls">
     <h1>K - SUNSET NAVI</h1>
-    
-    <div class="input-group">
-        <label>Date</label>
-        <input type="date" id="date-picker">
-    </div>
-    
-    <div class="info-grid">
-        <div class="time-display">
-            <label>Sunset</label>
-            <span class="time-label" id="sunset-time">--:--</span>
+    <input type="date" id="date-picker">
+    <div style="display:flex; justify-content:space-between; align-items:flex-end;">
+        <div>
+            <label style="font-size:10px; opacity:0.6;">SUNSET</label>
+            <div class="time-label" id="sunset-time">--:--</div>
         </div>
-        <div class="deg-label" id="sunset-deg">---°</div>
+        <div id="sunset-deg" style="font-size:12px; color:var(--gold);">---°</div>
     </div>
 </div>
 
 <div id="map"></div>
 
-<script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/suncalc/1.9.0/suncalc.min.js"></script>
 
 <script>
-    // 炉ばたとワイン K の座標
     const shopLat = 42.968995;
     const shopLng = 144.373180;
     let sunsetLine = null;
 
-    // 地図の初期化（モバイル向けにズーム操作などを最適化）
-    const map = L.map('map', { 
-        zoomControl: false, // ズームボタン非表示（スッキリさせる）
-        minZoom: 14,
-        maxZoom: 19
-    }).setView([shopLat, shopLng], 17);
+    // 地図の初期化
+    const map = L.map('map', { zoomControl: false }).setView([shopLat, shopLng], 17);
 
-    // 航空写真レイヤー
-    L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
-        attribution: 'Tiles &copy; Esri'
+    // 航空写真タイルのURLをより安定したものに変更
+    L.tileLayer('https://{s}.google.com/vt/lyrs=s&x={x}&y={y}&z={z}', {
+        maxZoom: 20,
+        subdomains: ['mt0', 'mt1', 'mt2', 'mt3'],
+        attribution: '&copy; Google Maps'
     }).addTo(map);
 
-    // お店の位置にカスタムパルスマーカー
-    const kIcon = L.divIcon({
-        className: 'custom-icon',
-        html: "<div class='k-marker'></div>",
-        iconSize: [14, 14],
-        iconAnchor: [7, 7]
+    // 地図が読み込まれたらローダーを消す
+    map.on('tileload', function() {
+        document.getElementById('loader').style.display = 'none';
     });
+
+    // お店のピン
+    const kIcon = L.divIcon({ className: 'custom-icon', html: "<div class='k-marker'></div>", iconSize: [12, 12], iconAnchor: [6, 6] });
     L.marker([shopLat, shopLng], {icon: kIcon}).addTo(map);
 
     const dateInput = document.getElementById('date-picker');
-    // 初期値を日本時間の「今日」に設定
-    const today = new Date();
-    dateInput.value = today.toLocaleDateString('sv-SE'); // YYYY-MM-DD形式
+    dateInput.value = new Date().toISOString().split('T')[0];
 
-    function updateSunset() {
+    function update() {
         const date = new Date(dateInput.value);
-        // 時刻は正午に設定して計算の安定性を高める
         date.setHours(12, 0, 0);
-        
         const times = SunCalc.getTimes(date, shopLat, shopLng);
         const pos = SunCalc.getPosition(times.sunset, shopLat, shopLng);
         
         if (sunsetLine) map.removeLayer(sunsetLine);
 
-        // 方位角の計算
-        const azimuth = pos.azimuth; 
-        
-        // 線の描画（モバイルで見やすい太さに）
-        const d = 0.02; // 線の長さ
-        const endLat = shopLat + d * Math.cos(azimuth + Math.PI);
-        const endLng = shopLng + d * Math.sin(azimuth + Math.PI);
+        const d = 0.03;
+        const endLat = shopLat + d * Math.cos(pos.azimuth + Math.PI);
+        const endLng = shopLng + d * Math.sin(pos.azimuth + Math.PI);
 
         sunsetLine = L.polyline([[shopLat, shopLng], [endLat, endLng]], {
-            color: '#feb47b',
-            weight: 6,
-            opacity: 0.8,
-            lineCap: 'round',
-            dashArray: '1, 12' 
+            color: '#feb47b', weight: 4, opacity: 0.8, dashArray: '5, 10'
         }).addTo(map);
 
-        // テキスト更新
-        const timeStr = times.sunset.toLocaleTimeString('ja-JP', {hour: '2-digit', minute:'2-digit'});
-        document.getElementById('sunset-time').innerText = timeStr;
-        document.getElementById('sunset-deg').innerText = `方位角: ${(azimuth * 180 / Math.PI + 180).toFixed(1)}°`;
+        document.getElementById('sunset-time').innerText = times.sunset.toLocaleTimeString('ja-JP', {hour:'2-digit', minute:'2-digit'});
+        document.getElementById('sunset-deg').innerText = `方位角: ${(pos.azimuth * 180 / Math.PI + 180).toFixed(1)}°`;
     }
 
-    // イベント設定
-    dateInput.addEventListener('change', updateSunset);
-    
-    // 起動時に実行
-    updateSunset();
+    dateInput.addEventListener('change', update);
+    update();
 </script>
 </body>
 </html>
