@@ -2,54 +2,62 @@
 <html lang="ja">
 <head>
     <meta charset="UTF-8">
-    <title>K - 釧路・米町 夕日ナビ</title>
+    <title>K - SUNSET NAVI (GPS)</title>
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <style>
         :root { --accent: #ff7e5f; --gold: #feb47b; --glass: rgba(26, 26, 26, 0.9); }
-        body, html { margin: 0; padding: 0; width: 100%; height: 100%; background: #1a1a1a; color: #fff; overflow: hidden; }
+        body, html { margin: 0; padding: 0; width: 100%; height: 100%; background: #000; color: #fff; overflow: hidden; }
         
-        /* 読み込み中の表示 */
-        #loader {
-            position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
-            z-index: 2000; font-size: 14px; letter-spacing: 2px; color: var(--gold);
-        }
-
         #controls { 
             position: absolute; top: 15px; left: 15px; right: 15px; 
-            padding: 20px; background: var(--glass); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
+            padding: 15px; background: var(--glass); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
             border: 1px solid rgba(255,255,255,0.1); border-radius: 15px; z-index: 1000;
         }
 
-        h1 { margin: 0 0 10px; font-size: 16px; letter-spacing: 2px; color: var(--gold); }
+        h1 { margin: 0 0 8px; font-size: 14px; letter-spacing: 2px; color: var(--gold); }
         input[type="date"] { 
             width: 100%; background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.3);
-            color: #fff; padding: 10px; border-radius: 8px; font-size: 16px; margin-bottom: 10px;
+            color: #fff; padding: 8px; border-radius: 8px; font-size: 16px; margin-bottom: 10px;
         }
 
-        .time-label { font-size: 42px; font-weight: 200; line-height: 1; }
-        #map { height: 100%; width: 100%; background: #1a1a1a; } /* 地図エリアを確保 */
-
-        .k-marker {
-            background: var(--accent); width: 12px; height: 12px; border-radius: 50%;
-            border: 2px solid #fff; box-shadow: 0 0 15px var(--accent);
+        .info-row { display: flex; justify-content: space-between; align-items: flex-end; }
+        .time-label { font-size: 36px; font-weight: 200; line-height: 1; }
+        
+        /* GPSボタンのスタイル */
+        #gps-button {
+            position: absolute; bottom: 30px; right: 20px; 
+            width: 50px; height: 50px; background: var(--glass);
+            border: 1px solid var(--gold); border-radius: 50%;
+            z-index: 1000; cursor: pointer; display: flex;
+            align-items: center; justify-content: center;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.5);
         }
+        #gps-button svg { fill: var(--gold); width: 24px; height: 24px; }
+
+        #map { height: 100%; width: 100%; background: #1a1a1a; }
+        .user-marker { background: #3498db; width: 12px; height: 12px; border-radius: 50%; border: 2px solid #fff; box-shadow: 0 0 10px #3498db; }
     </style>
 </head>
 <body>
 
-<div id="loader">MAP LOADING...</div>
-
 <div id="controls">
     <h1>K - SUNSET NAVI</h1>
     <input type="date" id="date-picker">
-    <div style="display:flex; justify-content:space-between; align-items:flex-end;">
+    <div class="info-row">
         <div>
             <label style="font-size:10px; opacity:0.6;">SUNSET</label>
             <div class="time-label" id="sunset-time">--:--</div>
         </div>
-        <div id="sunset-deg" style="font-size:12px; color:var(--gold);">---°</div>
+        <div id="status" style="font-size:11px; text-align:right;">
+            <span id="place-name">Kushiro, Rice-machi</span><br>
+            <span id="sunset-deg" style="color:var(--gold);">---°</span>
+        </div>
     </div>
+</div>
+
+<div id="gps-button" onclick="getLocation()">
+    <svg viewBox="0 0 24 24"><path d="M12 8c-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4-1.79-4-4-4zm8.94 3c-.46-4.17-3.77-7.48-7.94-7.94V1h-2v2.06C6.83 3.52 3.52 6.83 3.06 11H1v2h2.06c.46 4.17 3.77 7.48 7.94 7.94V23h2v-2.06c4.17-.46 7.48-3.77 7.94-7.94H23v-2h-2.06zM12 19c-3.87 0-7-3.13-7-7s3.13-7 7-7 7 3.13 7 7-3.13 7-7 7z"/></svg>
 </div>
 
 <div id="map"></div>
@@ -58,54 +66,77 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/suncalc/1.9.0/suncalc.min.js"></script>
 
 <script>
-    const shopLat = 42.968995;
-    const shopLng = 144.373180;
+    // 初期座標（お店）
+    let currentLat = 42.968995;
+    let currentLng = 144.373180;
     let sunsetLine = null;
+    let locationMarker = null;
 
-    // 地図の初期化
-    const map = L.map('map', { zoomControl: false }).setView([shopLat, shopLng], 17);
+    const map = L.map('map', { zoomControl: false }).setView([currentLat, currentLng], 16);
 
-    // 航空写真タイルのURLをより安定したものに変更
+    // 衛星写真
     L.tileLayer('https://{s}.google.com/vt/lyrs=s&x={x}&y={y}&z={z}', {
-        maxZoom: 20,
-        subdomains: ['mt0', 'mt1', 'mt2', 'mt3'],
-        attribution: '&copy; Google Maps'
+        maxZoom: 20, subdomains: ['mt0', 'mt1', 'mt2', 'mt3'], attribution: '&copy; Google Maps'
     }).addTo(map);
 
-    // 地図が読み込まれたらローダーを消す
-    map.on('tileload', function() {
-        document.getElementById('loader').style.display = 'none';
-    });
-
-    // お店のピン
-    const kIcon = L.divIcon({ className: 'custom-icon', html: "<div class='k-marker'></div>", iconSize: [12, 12], iconAnchor: [6, 6] });
-    L.marker([shopLat, shopLng], {icon: kIcon}).addTo(map);
+    // 初期マーカー（お店）
+    locationMarker = L.marker([currentLat, currentLng]).addTo(map);
 
     const dateInput = document.getElementById('date-picker');
     dateInput.value = new Date().toISOString().split('T')[0];
 
-    function update() {
+    // 方位と時間を更新する関数
+    function updateDisplay(lat, lng) {
         const date = new Date(dateInput.value);
         date.setHours(12, 0, 0);
-        const times = SunCalc.getTimes(date, shopLat, shopLng);
-        const pos = SunCalc.getPosition(times.sunset, shopLat, shopLng);
+        
+        const times = SunCalc.getTimes(date, lat, lng);
+        const pos = SunCalc.getPosition(times.sunset, lat, lng);
         
         if (sunsetLine) map.removeLayer(sunsetLine);
 
+        const azimuth = pos.azimuth;
         const d = 0.03;
-        const endLat = shopLat + d * Math.cos(pos.azimuth + Math.PI);
-        const endLng = shopLng + d * Math.sin(pos.azimuth + Math.PI);
+        const endLat = lat + d * Math.cos(azimuth + Math.PI);
+        const endLng = lng + d * Math.sin(azimuth + Math.PI);
 
-        sunsetLine = L.polyline([[shopLat, shopLng], [endLat, endLng]], {
+        sunsetLine = L.polyline([[lat, lng], [endLat, endLng]], {
             color: '#feb47b', weight: 4, opacity: 0.8, dashArray: '5, 10'
         }).addTo(map);
 
         document.getElementById('sunset-time').innerText = times.sunset.toLocaleTimeString('ja-JP', {hour:'2-digit', minute:'2-digit'});
-        document.getElementById('sunset-deg').innerText = `方位角: ${(pos.azimuth * 180 / Math.PI + 180).toFixed(1)}°`;
+        document.getElementById('sunset-deg').innerText = `方位角: ${(azimuth * 180 / Math.PI + 180).toFixed(1)}°`;
     }
 
-    dateInput.addEventListener('change', update);
-    update();
+    // GPS取得関数
+    function getLocation() {
+        if (!navigator.geolocation) {
+            alert("お使いのブラウザはGPSに対応していません");
+            return;
+        }
+
+        navigator.geolocation.getCurrentPosition((position) => {
+            currentLat = position.coords.latitude;
+            currentLng = position.coords.longitude;
+
+            // 地図を移動
+            map.setView([currentLat, currentLng], 17);
+            
+            // マーカーを更新
+            if (locationMarker) map.removeLayer(locationMarker);
+            locationMarker = L.marker([currentLat, currentLng], {
+                icon: L.divIcon({ className: 'custom-icon', html: "<div class='user-marker'></div>", iconSize: [12, 12], iconAnchor: [6, 6] })
+            }).addTo(map);
+
+            document.getElementById('place-name').innerText = "Current Location";
+            updateDisplay(currentLat, currentLng);
+        }, (err) => {
+            alert("位置情報の取得に失敗しました。設定を確認してください。");
+        });
+    }
+
+    dateInput.addEventListener('change', () => updateDisplay(currentLat, currentLng));
+    updateDisplay(currentLat, currentLng);
 </script>
 </body>
 </html>
